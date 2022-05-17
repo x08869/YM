@@ -96,7 +96,7 @@ const Address: NextPage<Props> = ({ address, fallback }) => {
 
   return (
     <Layout navbar={{}}>
-      <Head>{title}</Head>
+      <Head>{metadata.title(`${address} Profile`)}</Head>
       <div className="col-span-full">
         <div className="mt-4 mb-4 w-full px-4 md:px-16">
           <div className="flex">
