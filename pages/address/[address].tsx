@@ -145,7 +145,7 @@ const Address: NextPage<Props> = ({ address, fallback }) => {
                   modal={{
                     accountData,
                     isInTheWrongNetwork,
-                    collectionId,
+                    collectionId: undefined,
                     setToast,
                     signer,
                   }}
@@ -173,7 +173,7 @@ const Address: NextPage<Props> = ({ address, fallback }) => {
                     modal={{
                       accountData,
                       isInTheWrongNetwork,
-                      collectionId,
+                      collectionId: undefined,
                       setToast,
                       signer,
                     }}
@@ -191,7 +191,7 @@ const Address: NextPage<Props> = ({ address, fallback }) => {
                     modal={{
                       accountData,
                       isInTheWrongNetwork,
-                      collectionId,
+                      collectionId: undefined,
                       setToast,
                       signer,
                     }}
