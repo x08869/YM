@@ -332,22 +332,24 @@ export const getStaticProps: GetStaticProps<{
 
   const tokenPromise = fetch(tokensUrl.href, options)
 
-  const responses = await Promise.allSettled([
-    collectionPromise.then((response) => response.json()),
-    tokenPromise.then((response) => response.json()),
+  const [collectionSettled, tokensSettled] = await Promise.allSettled([
+    collectionPromise.then(
+      (response) => response.json() as Props['fallback']['collection']
+    ),
+    tokenPromise.then(
+      (response) => response.json() as Props['fallback']['tokens']
+    ),
   ])
 
-  let collection = [] as Props['fallback']['collection']
-  let tokens = [] as Props['fallback']['tokens']
+  let collection: Props['fallback']['collection'] = {}
+  let tokens: Props['fallback']['tokens'] = {}
 
-  if (responses) {
-    if (responses[0] && responses[0].status == 'fulfilled') {
-      collection = responses[0] as Props['fallback']['collection']
-    }
+  if (collectionSettled.status === 'fulfilled') {
+    collection = collectionSettled.value
+  }
 
-    if (responses[1] && responses[1].status == 'fulfilled') {
-      tokens = responses[1] as Props['fallback']['tokens']
-    }
+  if (tokensSettled.status === 'fulfilled') {
+    tokens = tokensSettled.value
   }
 
   return {
