@@ -341,11 +341,11 @@ export const getStaticProps: GetStaticProps<{
   let tokens = [] as Props['fallback']['tokens']
 
   if (responses) {
-    if (responses[0]) {
+    if (responses[0] && responses[0].status == 'fulfilled') {
       collection = responses[0] as Props['fallback']['collection']
     }
 
-    if (responses[1]) {
+    if (responses[1] && responses[1].status == 'fulfilled') {
       tokens = responses[1] as Props['fallback']['tokens']
     }
   }
