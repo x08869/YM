@@ -23,7 +23,7 @@ const NavbarLogo: FC<Props> = ({ variant, className }) => {
   return (
     <Link href={NAVBAR_LOGO_LINK || '/'}>
       <a
-        className={`relative inline-flex flex-none items-center gap-1 ${className}`}
+        className={`relative inline-flex flex-none items-center gap-0 ${className}`}
       >
         <img
           src={logo}
