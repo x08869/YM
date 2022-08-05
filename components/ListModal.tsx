@@ -3,7 +3,7 @@ import * as Dialog from '@radix-ui/react-dialog'
 import ExpirationSelector from './ExpirationSelector'
 import { DateTime } from 'luxon'
 import { BigNumber, constants, ethers } from 'ethers'
-import { useConnect, useSigner } from 'wagmi'
+import { useSigner } from 'wagmi'
 import FormatEth from './FormatEth'
 import { SWRResponse } from 'swr'
 import ModalCard from './modal/ModalCard'
@@ -11,10 +11,14 @@ import Toast from './Toast'
 import { SWRInfiniteResponse } from 'swr/infinite/dist/infinite'
 import { getCollection, getDetails } from 'lib/fetch/fetch'
 import { CgSpinner } from 'react-icons/cg'
-import { Execute, listToken, paths } from '@reservoir0x/client-sdk'
+import {
+  Execute,
+  paths,
+  ReservoirClientActions,
+} from '@reservoir0x/reservoir-kit-client'
 import { GlobalContext } from 'context/GlobalState'
+import { useReservoirClient } from '@reservoir0x/reservoir-kit-ui'
 
-const RESERVOIR_API_BASE = process.env.NEXT_PUBLIC_RESERVOIR_API_BASE
 const ORDER_KIND = process.env.NEXT_PUBLIC_ORDER_KIND
 const SOURCE_ID = process.env.NEXT_PUBLIC_SOURCE_ID
 const FEE_BPS = process.env.NEXT_PUBLIC_FEE_BPS
@@ -81,15 +85,25 @@ const ListModal: FC<Props> = ({
   const { dispatch } = useContext(GlobalContext)
 
   const [open, setOpen] = useState(false)
+  const reservoirClient = useReservoirClient()
 
   useEffect(() => {
+    let isSubscribed = true
     if (data) {
       // Load data if missing
       if ('tokenId' in data) {
         const { contract, tokenId, collectionId } = data
 
-        getDetails(contract, tokenId, setDetails)
-        getCollection(collectionId, setCollection)
+        getDetails(contract, tokenId, (details) => {
+          if (isSubscribed) {
+            setDetails(details)
+          }
+        })
+        getCollection(collectionId, (collection) => {
+          if (isSubscribed) {
+            setCollection(collection)
+          }
+        })
       }
       // Load data if provided
       if ('details' in data) {
@@ -98,6 +112,9 @@ const ListModal: FC<Props> = ({
         setDetails(details)
         setCollection(collection)
       }
+    }
+    return () => {
+      isSubscribed = false
     }
   }, [data])
 
@@ -133,11 +150,16 @@ const ListModal: FC<Props> = ({
     token = details.data?.tokens?.[0]
   }
 
-  const { market, token: token_ } = token
+  const { token: token_ } = token
 
-  const handleError: Parameters<typeof listToken>[0]['handleError'] = (
-    err: any
-  ) => {
+  const handleSuccess = () => {
+    setWaitingTx(false)
+    details && 'mutate' in details && details.mutate()
+    mutate && mutate()
+  }
+
+  const handleError = (err: any) => {
+    setWaitingTx(false)
     // Close modal
     setOpen(false)
     // Reset steps
@@ -158,82 +180,80 @@ const ListModal: FC<Props> = ({
     })
   }
 
-  const handleSuccess: Parameters<
-    typeof listToken
-  >[0]['handleSuccess'] = () => {
-    details && 'mutate' in details && details.mutate()
-    mutate && mutate()
-  }
-
   const execute = async () => {
+    if (!reservoirClient) throw 'reservoirClient is not initialized'
+
+    if (!signer) throw 'signer is undefined'
+
     setWaitingTx(true)
 
     const expirationValue = expirationPresets
       .find(({ preset }) => preset === expiration)
       ?.value()
 
-    if (!maker) throw 'maker is undefined'
-
-    const query: Parameters<typeof listToken>['0']['query'] = {
+    const options: Parameters<
+      ReservoirClientActions['listToken']
+    >[0]['options'] = {
       orderbook: 'reservoir',
-      maker,
-      weiPrice: ethers.utils.parseEther(listingPrice).toString(),
-      token: `${token_?.contract}:${token_?.tokenId}`,
-      expirationTime: expirationValue,
     }
 
-    if (!ORDER_KIND) query.orderKind = 'zeroex-v4'
+    if (!ORDER_KIND) options.orderKind = 'seaport'
 
-    if (ORDER_KIND) query.orderKind = ORDER_KIND as typeof query.orderKind
-    if (SOURCE_ID) query.source = SOURCE_ID
-    if (FEE_BPS) query.fee = FEE_BPS
-    if (FEE_RECIPIENT) query.feeRecipient = FEE_RECIPIENT
+    if (ORDER_KIND) options.orderKind = ORDER_KIND as typeof options.orderKind
+    if (SOURCE_ID) options.source = SOURCE_ID
+    if (FEE_BPS) options.fee = FEE_BPS
+    if (FEE_RECIPIENT) options.feeRecipient = FEE_RECIPIENT
 
-    await listToken({
-      query,
-      signer,
-      apiBase: RESERVOIR_API_BASE,
-      setState: setSteps,
-      handleSuccess,
-      handleError,
-    })
+    reservoirClient.actions
+      .listToken({
+        signer,
+        weiPrice: ethers.utils.parseEther(listingPrice).toString(),
+        token: `${token_?.contract}:${token_?.tokenId}`,
+        expirationTime: expirationValue,
+        options: options,
+        onProgress: setSteps,
+      })
+      .then(handleSuccess)
+      .catch(handleError)
+
     setWaitingTx(false)
   }
 
   const onContinue = async () => {
-    setWaitingTx(true)
+    if (!reservoirClient) throw 'reservoirClient is not initialized'
+    if (!signer) throw 'signer is undefined'
 
+    setWaitingTx(true)
     setOrderbook(['opensea'])
 
     const expirationValue = expirationPresets
       .find(({ preset }) => preset === expiration)
       ?.value()
 
-    if (!maker) throw 'maker is undefined'
-
-    const query: Parameters<typeof listToken>['0']['query'] = {
+    const options: Parameters<
+      ReservoirClientActions['listToken']
+    >[0]['options'] = {
       orderbook: 'opensea',
-      maker,
-      weiPrice: ethers.utils.parseEther(listingPrice).toString(),
-      token: `${token_?.contract}:${token_?.tokenId}`,
-      expirationTime: expirationValue,
-      orderKind: 'wyvern-v2.3',
+      orderKind: 'seaport',
     }
 
-    if (SOURCE_ID) query.source = SOURCE_ID
+    if (SOURCE_ID) options.source = SOURCE_ID
 
     if (postOnOpenSea) {
-      await listToken({
-        query,
-        signer,
-        apiBase: RESERVOIR_API_BASE,
-        setState: setSteps,
-        handleSuccess,
-        handleError,
-      })
+      reservoirClient.actions
+        .listToken({
+          signer,
+          weiPrice: ethers.utils.parseEther(listingPrice).toString(),
+          token: `${token_?.contract}:${token_?.tokenId}`,
+          expirationTime: expirationValue,
+          options: options,
+          onProgress: setSteps,
+        })
+        .then(handleSuccess)
+        .catch(handleError)
+    } else {
+      setWaitingTx(false)
     }
-
-    setWaitingTx(false)
   }
 
   return (

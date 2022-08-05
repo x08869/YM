@@ -1,7 +1,7 @@
 import { ComponentProps, FC, useContext, useEffect, useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import ExpirationSelector from './ExpirationSelector'
-import { BigNumber, constants, ethers } from 'ethers'
+import { constants, ethers } from 'ethers'
 import {
   useAccount,
   useBalance,
@@ -13,16 +13,18 @@ import calculateOffer from 'lib/calculateOffer'
 import FormatEth from './FormatEth'
 import expirationPresets from 'lib/offerExpirationPresets'
 import useCollectionStats from 'hooks/useCollectionStats'
-import { Common } from '@reservoir0x/sdk'
 import getWeth from 'lib/getWeth'
 import useTokens from 'hooks/useTokens'
-import { Execute, placeBid } from '@reservoir0x/client-sdk'
+import {
+  Execute,
+  ReservoirClientActions,
+} from '@reservoir0x/reservoir-kit-client'
 import ModalCard from './modal/ModalCard'
 import Toast from './Toast'
 import { CgSpinner } from 'react-icons/cg'
 import { GlobalContext } from 'context/GlobalState'
+import { useReservoirClient } from '@reservoir0x/reservoir-kit-ui'
 
-const RESERVOIR_API_BASE = process.env.NEXT_PUBLIC_RESERVOIR_API_BASE
 const SOURCE_ID = process.env.NEXT_PUBLIC_SOURCE_ID
 const FEE_BPS = process.env.NEXT_PUBLIC_FEE_BPS
 const FEE_RECIPIENT = process.env.NEXT_PUBLIC_FEE_RECIPIENT
@@ -65,7 +67,7 @@ const AttributeOfferModal: FC<Props> = ({
   const [expiration, setExpiration] = useState<string>('oneDay')
   const [waitingTx, setWaitingTx] = useState<boolean>(false)
   const [steps, setSteps] = useState<Execute['steps']>()
-  const { activeChain } = useNetwork()
+  const { chain: activeChain } = useNetwork()
   const { dispatch } = useContext(GlobalContext)
   const [calculations, setCalculations] = useState<
     ReturnType<typeof calculateOffer>
@@ -78,16 +80,14 @@ const AttributeOfferModal: FC<Props> = ({
     warning: null,
   })
   const [offerPrice, setOfferPrice] = useState<string>('')
-  const [weth, setWeth] = useState<{
-    weth: Common.Helpers.Weth
-    balance: BigNumber
-  } | null>(null)
+  const [weth, setWeth] = useState<Awaited<ReturnType<typeof getWeth>>>(null)
   const { data: signer } = useSigner()
-  const { data: account } = useAccount()
+  const account = useAccount()
   const { data: ethBalance, refetch } = useBalance({
     addressOrName: account?.address,
   })
   const provider = useProvider()
+  const reservoirClient = useReservoirClient()
 
   function getBps(royalties: number | undefined, envBps: string | undefined) {
     let sum = 0
@@ -131,7 +131,8 @@ const AttributeOfferModal: FC<Props> = ({
     }
   }, [offerPrice])
 
-  const handleError: Parameters<typeof placeBid>[0]['handleError'] = (err) => {
+  const handleError = (err: any) => {
+    setWaitingTx(false)
     setOpen(false)
     setSteps(undefined)
     // Handle user rejection
@@ -150,7 +151,8 @@ const AttributeOfferModal: FC<Props> = ({
     })
   }
 
-  const handleSuccess: Parameters<typeof placeBid>[0]['handleSuccess'] = () => {
+  const handleSuccess = () => {
+    setWaitingTx(false)
     stats.mutate()
     tokens.mutate()
   }
@@ -158,37 +160,39 @@ const AttributeOfferModal: FC<Props> = ({
   const execute = async () => {
     if (!signer) dispatch({ type: 'CONNECT_WALLET', payload: true })
 
-    setWaitingTx(true)
-
     const expirationValue = expirationPresets
       .find(({ preset }) => preset === expiration)
       ?.value()
 
-    if (!signer) return
-
-    const query: Parameters<typeof placeBid>['0']['query'] = {
-      maker: await signer.getAddress(),
-      weiPrice: calculations.total.toString(),
-      expirationTime: expirationValue,
-      attributeKey: data.attribute.key,
-      attributeValue: data.attribute.value,
-      collection: data.collection.id,
-      orderKind: 'zeroex-v4',
+    if (!reservoirClient) {
+      throw 'reservoirClient is not initialized'
     }
 
-    if (SOURCE_ID) query.source = SOURCE_ID
-    if (FEE_BPS) query.fee = FEE_BPS
-    if (FEE_RECIPIENT) query.feeRecipient = FEE_RECIPIENT
+    setWaitingTx(true)
 
-    await placeBid({
-      query,
-      signer,
-      apiBase: RESERVOIR_API_BASE,
-      setState: setSteps,
-      handleSuccess,
-      handleError,
-    })
-    setWaitingTx(false)
+    const options: Parameters<
+      ReservoirClientActions['placeBid']
+    >['0']['options'] = {
+      expirationTime: expirationValue,
+      orderKind: 'seaport',
+    }
+
+    if (SOURCE_ID) options.source = SOURCE_ID
+    if (FEE_BPS) options.fee = FEE_BPS
+    if (FEE_RECIPIENT) options.feeRecipient = FEE_RECIPIENT
+
+    reservoirClient.actions
+      .placeBid({
+        signer,
+        collection: data.collection.id,
+        attributeKey: data.attribute.key,
+        attributeValue: data.attribute.value,
+        weiPrice: calculations.total.toString(),
+        options: options,
+        onProgress: setSteps,
+      })
+      .then(handleSuccess)
+      .catch(handleError)
   }
 
   return (

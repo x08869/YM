@@ -2,10 +2,11 @@ import { FC, ReactElement, useEffect, useState } from 'react'
 import ConnectWallet from './ConnectWallet'
 import HamburgerMenu from './HamburgerMenu'
 import dynamic from 'next/dynamic'
-import { paths } from '@reservoir0x/client-sdk'
+import { paths } from '@reservoir0x/reservoir-kit-client'
 import setParams from 'lib/params'
 import NavbarLogo from 'components/navbar/NavbarLogo'
 import ThemeSwitcher from './ThemeSwitcher'
+import CartMenu from './CartMenu'
 
 const SearchCollections = dynamic(() => import('./SearchCollections'))
 const CommunityDropdown = dynamic(() => import('./CommunityDropdown'))
@@ -99,7 +100,7 @@ const Navbar: FC = () => {
   }, [filterableCollection])
 
   return (
-    <nav className="relative col-span-full flex items-center justify-between gap-2 px-6 py-4 md:gap-3 md:py-6 md:px-16">
+    <nav className="sticky top-0 z-[1000] col-span-full mb-[10px] flex items-center justify-between gap-2 border-b border-[#D4D4D4] bg-white px-6 py-4 dark:border-neutral-600 dark:bg-black md:gap-3 md:py-6 md:px-16">
       <NavbarLogo className="z-10 max-w-[300px]" />
       {showLinks && (
         <div className="z-10 ml-12 hidden items-center gap-11 lg:flex">
@@ -117,7 +118,7 @@ const Navbar: FC = () => {
         </div>
       )}
       <div className="flex h-full w-full items-center justify-center">
-        <div className="absolute left-0 z-[1] flex w-full justify-center">
+        <div className="absolute left-0 right-0 z-[1] flex w-full justify-center">
           {filterComponent && filterComponent}
         </div>
       </div>
@@ -126,6 +127,7 @@ const Navbar: FC = () => {
         <ConnectWallet />
         <ThemeSwitcher />
       </div>
+      <CartMenu />
     </nav>
   )
 }

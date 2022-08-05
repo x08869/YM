@@ -12,7 +12,7 @@ import useCollectionStats from 'hooks/useCollectionStats'
 import useTokens from 'hooks/useTokens'
 import useCollectionAttributes from 'hooks/useCollectionAttributes'
 import { setToast } from 'components/token/setToast'
-import { paths, setParams } from '@reservoir0x/client-sdk'
+import { paths, setParams } from '@reservoir0x/reservoir-kit-client'
 import Hero from 'components/Hero'
 import { formatNumber } from 'lib/numbers'
 import Sidebar from 'components/Sidebar'
@@ -30,6 +30,7 @@ import useAttributes from 'hooks/useAttributes'
 import * as Tabs from '@radix-ui/react-tabs'
 import { toggleOnItem } from 'lib/router'
 import CollectionActivityTable from 'components/tables/CollectionActivityTable'
+import Sweep from 'components/Sweep'
 
 // Environment variables
 // For more information about these variables
@@ -242,6 +243,11 @@ const Home: NextPage<Props> = ({ fallback, id }) => {
                         }`}
                       />
                     </button>
+                    <Sweep
+                      collection={collection}
+                      tokens={tokens}
+                      setToast={setToast}
+                    />
                   </div>
                 </div>
                 <div className="mb-10 flex items-center justify-between">

@@ -6,7 +6,7 @@ import TokenAttributes from 'components/TokenAttributes'
 import Head from 'next/head'
 import useDetails from 'hooks/useDetails'
 import useCollection from 'hooks/useCollection'
-import { paths } from '@reservoir0x/client-sdk/dist/types/api'
+import { paths } from '@reservoir0x/reservoir-kit-client'
 import useAsks from 'hooks/useAsks'
 import Listings from 'components/token/Listings'
 import TokenInfo from 'components/token/TokenInfo'
@@ -206,12 +206,13 @@ export const getStaticProps: GetStaticProps<{
 }> = async ({ params }) => {
   const contract = params?.contract?.toString()
   const tokenId = params?.tokenId?.toString()
+  const collectionAddress = COLLECTION ? COLLECTION.split(':')[0] : COLLECTION
 
   if (
-    COLLECTION &&
+    collectionAddress &&
     !COMMUNITY &&
     !COLLECTION_SET_ID &&
-    COLLECTION.toLowerCase() !== contract?.toLowerCase()
+    collectionAddress.toLowerCase() !== contract?.toLowerCase()
   ) {
     return {
       notFound: true,

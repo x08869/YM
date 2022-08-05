@@ -1,4 +1,4 @@
-import { buyToken, Execute, paths } from '@reservoir0x/client-sdk'
+import { Execute, paths } from '@reservoir0x/reservoir-kit-client'
 import React, {
   ComponentProps,
   FC,
@@ -23,8 +23,10 @@ import { styled } from '@stitches/react'
 import { violet, blackA } from '@radix-ui/colors'
 import * as SliderPrimitive from '@radix-ui/react-slider'
 import Link from 'next/link'
+import { Signer } from 'ethers'
+import { FaBroom } from 'react-icons/fa'
+import { useReservoirClient } from '@reservoir0x/reservoir-kit-ui'
 
-const RESERVOIR_API_BASE = process.env.NEXT_PUBLIC_RESERVOIR_API_BASE
 const CHAIN_ID = process.env.NEXT_PUBLIC_CHAIN_ID
 const DARK_MODE = process.env.NEXT_PUBLIC_DARK_MODE
 const DISABLE_POWERED_BY_RESERVOIR =
@@ -87,8 +89,8 @@ const StyledThumb = styled(SliderPrimitive.Thumb, {
 
 const Sweep: FC<Props> = ({ tokens, collection, mutate, setToast }) => {
   const [waitingTx, setWaitingTx] = useState<boolean>(false)
-  const { data: accountData } = useAccount()
-  const { activeChain } = useNetwork()
+  const accountData = useAccount()
+  const { chain: activeChain } = useNetwork()
   const { data: signer } = useSigner()
   const [steps, setSteps] = useState<Execute['steps']>()
   const [sweepAmount, setSweepAmount] = useState<number>(1)
@@ -98,8 +100,9 @@ const Sweep: FC<Props> = ({ tokens, collection, mutate, setToast }) => {
   >([])
   const [sweepTotal, setSweepTotal] = useState<number>(0)
   const [open, setOpen] = useState(false)
-  const [details, setDetails] = useState<SWRResponse<Details, any> | Details>()
+  const [details, _setDetails] = useState<SWRResponse<Details, any> | Details>()
   const { dispatch } = useContext(GlobalContext)
+  const reservoirClient = useReservoirClient()
 
   const isInTheWrongNetwork = Boolean(
     signer && CHAIN_ID && activeChain?.id !== +CHAIN_ID
@@ -151,76 +154,70 @@ const Sweep: FC<Props> = ({ tokens, collection, mutate, setToast }) => {
     token = details.data?.tokens?.[0]
   }
 
-  const handleError: Parameters<typeof buyToken>[0]['handleError'] = (
-    err: any
-  ) => {
-    if (err?.type === 'price mismatch') {
-      setToast({
-        kind: 'error',
-        message: 'Price was greater than expected.',
-        title: 'Could not buy token',
-      })
-      return
+  const execute = async (signer: Signer) => {
+    if (!signer) {
+      throw 'Missing a signer'
     }
 
-    if (err?.message === 'Not enough ETH balance') {
-      setToast({
-        kind: 'error',
-        message: 'You have insufficient funds to buy this token.',
-        title: 'Not enough ETH balance',
-      })
-      return
+    if (!sweepTokens) {
+      throw 'Missing tokens to sweep'
     }
-    // Handle user rejection
-    if (err?.code === 4001) {
-      setOpen(false)
-      setSteps(undefined)
-      setToast({
-        kind: 'error',
-        message: 'You have canceled the transaction.',
-        title: 'User canceled transaction',
-      })
-      return
+
+    if (!reservoirClient) {
+      throw 'reservoirClient is not initialized'
     }
-    setToast({
-      kind: 'error',
-      message: 'The transaction was not completed.',
-      title: 'Could not buy token',
-    })
-  }
 
-  const handleSuccess: Parameters<typeof buyToken>[0]['handleSuccess'] = () => {
-    details && 'mutate' in details && details.mutate()
-    mutate && mutate()
-  }
-
-  const execute = async (taker: string) => {
     setWaitingTx(true)
 
-    const query: Parameters<typeof buyToken>['0']['query'] = {
-      taker,
-    }
+    await reservoirClient.actions
+      .buyToken({
+        expectedPrice: sweepTotal,
+        tokens: sweepTokens,
+        signer,
+        onProgress: setSteps,
+      })
+      .then(() => {
+        setWaitingTx(false)
+        details && 'mutate' in details && details.mutate()
+        mutate && mutate()
+      })
+      .catch((err: any) => {
+        setWaitingTx(false)
+        if (err?.type === 'price mismatch') {
+          setToast({
+            kind: 'error',
+            message: 'Price was greater than expected.',
+            title: 'Could not buy token',
+          })
+          return
+        }
 
-    sweepTokens?.forEach(
-      (token, index) =>
-        // @ts-ignore
-        (query[`tokens[${index}]`] = `${token.contract}:${token.tokenId}`)
-    )
-
-    await buyToken({
-      expectedPrice: sweepTotal,
-      query,
-      signer,
-      apiBase: RESERVOIR_API_BASE,
-      setState: setSteps,
-      handleSuccess,
-      handleError,
-    })
-
-    setWaitingTx(false)
+        if (err?.message.includes('ETH balance')) {
+          setToast({
+            kind: 'error',
+            message: 'You have insufficient funds to buy this token.',
+            title: 'Not enough ETH balance',
+          })
+          return
+        }
+        // Handle user rejection
+        if (err?.code === 4001) {
+          setOpen(false)
+          setSteps(undefined)
+          setToast({
+            kind: 'error',
+            message: 'You have canceled the transaction.',
+            title: 'User canceled transaction',
+          })
+          return
+        }
+        setToast({
+          kind: 'error',
+          message: 'The transaction was not completed.',
+          title: 'Could not buy token',
+        })
+      })
   }
-
-  const taker = accountData?.address
 
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
@@ -231,8 +228,9 @@ const Sweep: FC<Props> = ({ tokens, collection, mutate, setToast }) => {
           isInTheWrongNetwork ||
           sweepTokens?.length === 0
         }
-        className="btn-primary-fill w-full dark:ring-primary-900 dark:focus:ring-4 md:w-[222px]"
+        className="btn-primary-fill gap-2 dark:ring-primary-900 dark:focus:ring-4"
       >
+        <FaBroom className="text-white" />
         Sweep
       </Dialog.Trigger>
 
@@ -307,14 +305,14 @@ const Sweep: FC<Props> = ({ tokens, collection, mutate, setToast }) => {
                           <img
                             className="absolute top-1 right-1 h-4 w-4"
                             src={`https://api.reservoir.tools/redirect/logo/v1?source=${token?.source}`}
-                            alt=""
+                            alt={`${token?.source} icon`}
                           />
                           <img
                             src={optimizeImage(token?.image, 72)}
-                            alt=""
-                            className="mb-2 h-[72px] w-full rounded-lg object-contain"
+                            className="mb-2 h-[72px] w-full rounded-lg object-cover"
+                            alt={`${token?.name} image`}
                           />
-                          <div className="reservoir-subtitle text-center dark:text-white">
+                          <div className="reservoir-subtitle text-center text-xs dark:text-white md:text-sm">
                             <FormatEth
                               amount={token?.floorAskPrice}
                               maximumFractionDigits={4}
@@ -344,12 +342,12 @@ const Sweep: FC<Props> = ({ tokens, collection, mutate, setToast }) => {
                         sweepTokens?.length === 0
                       }
                       onClick={async () => {
-                        if (!taker) {
+                        if (!signer) {
                           dispatch({ type: 'CONNECT_WALLET', payload: true })
                           return
                         }
 
-                        await execute(taker)
+                        await execute(signer)
                       }}
                       className="btn-primary-fill w-full dark:ring-primary-900 dark:focus:ring-4 md:mx-auto md:w-[248px]"
                     >

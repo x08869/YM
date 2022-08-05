@@ -5,7 +5,7 @@ import { useRouter } from 'next/router'
 import setParams from 'lib/params'
 import debounce from 'lodash.debounce'
 import { FiSearch, FiXCircle } from 'react-icons/fi'
-import { paths } from '@reservoir0x/client-sdk/dist/types/api'
+import { paths } from '@reservoir0x/reservoir-kit-client'
 
 type SearchCollectionsAPISuccessResponse =
   paths['/search/collections/v1']['get']['responses']['200']['schema']
@@ -156,7 +156,7 @@ const SearchCollections: FC<Props> = ({ communityId, initialResults }) => {
                             'https://via.placeholder.com/30'
                           }
                           alt={`${collection?.name}'s logo.`}
-                          className="h-9 w-9 overflow-hidden rounded-full"
+                          className="h-9 w-9 shrink-0 overflow-hidden rounded-full"
                         />
                         <span className="reservoir-subtitle ml-2 dark:text-white">
                           {collection?.name}
@@ -205,7 +205,7 @@ const SearchCollections: FC<Props> = ({ communityId, initialResults }) => {
                         collection?.image ?? 'https://via.placeholder.com/30'
                       }
                       alt={`${collection?.name}'s logo.`}
-                      className="h-9 w-9 overflow-hidden rounded-full"
+                      className="h-9 w-9 shrink-0 overflow-hidden rounded-full"
                     />
                     <span className="reservoir-subtitle ml-2 dark:text-white">
                       {collection?.name}

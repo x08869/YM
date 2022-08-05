@@ -14,7 +14,7 @@ type Props = {
   maker: string
   mutate: () => any
   modal: {
-    accountData: ReturnType<typeof useAccount>['data']
+    accountData: ReturnType<typeof useAccount>
     collectionId: string | undefined
     isInTheWrongNetwork: boolean | undefined
     setToast: (data: ComponentProps<typeof Toast>['data']) => any
@@ -127,7 +127,6 @@ const UserListingsTable: FC<Props> = ({
                         contract,
                         tokenId,
                       }}
-                      maker={maker}
                       signer={modal.signer}
                       show={true}
                       isInTheWrongNetwork={modal.isInTheWrongNetwork}

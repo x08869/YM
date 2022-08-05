@@ -2,13 +2,16 @@ import AcceptOffer from 'components/AcceptOffer'
 import BuyNow from 'components/BuyNow'
 import CancelListing from 'components/CancelListing'
 import CancelOffer from 'components/CancelOffer'
+import { recoilTokensMap } from 'components/CartMenu'
 import FormatEth from 'components/FormatEth'
 import FormatWEth from 'components/FormatWEth'
 import ListModal from 'components/ListModal'
 import TokenOfferModal from 'components/TokenOfferModal'
+import { recoilCartTokens } from 'components/TokensGrid'
 import useCollection from 'hooks/useCollection'
 import useDetails from 'hooks/useDetails'
 import React, { FC, ReactNode } from 'react'
+import { useRecoilState, useRecoilValue } from 'recoil'
 import { useAccount, useNetwork, useSigner } from 'wagmi'
 import { setToast } from './setToast'
 
@@ -23,9 +26,11 @@ type Props = {
 }
 
 const PriceData: FC<Props> = ({ details, collection }) => {
-  const { data: accountData } = useAccount()
+  const [cartTokens, setCartTokens] = useRecoilState(recoilCartTokens)
+  const tokensMap = useRecoilValue(recoilTokensMap)
+  const accountData = useAccount()
   const { data: signer } = useSigner()
-  const { activeChain } = useNetwork()
+  const { chain: activeChain } = useNetwork()
 
   const token = details.data?.tokens?.[0]
 
@@ -47,11 +52,23 @@ const PriceData: FC<Props> = ({ details, collection }) => {
   const isOwner =
     token?.token?.owner?.toLowerCase() === accountData?.address?.toLowerCase()
   const isTopBidder =
-    !!accountData &&
+    accountData.isConnected &&
     token?.market?.topBid?.maker?.toLowerCase() ===
       accountData?.address?.toLowerCase()
   const isListed = token?.market?.floorAsk?.price !== null
   const isInTheWrongNetwork = Boolean(signer && activeChain?.id !== +CHAIN_ID)
+
+  const tokenId = token?.token?.tokenId
+  const contract = token?.token?.contract
+
+  const isInCart = Boolean(tokensMap[`${contract}:${tokenId}`])
+
+  const showAcceptOffer =
+    token?.market?.topBid?.id !== null &&
+    token?.market?.topBid?.id !== undefined &&
+    isOwner
+      ? true
+      : false
 
   return (
     <div className="col-span-full md:col-span-4 lg:col-span-5 lg:col-start-2">
@@ -88,69 +105,108 @@ const PriceData: FC<Props> = ({ details, collection }) => {
               />
             }
           />
-          <div className="col-span-2 grid gap-4 md:grid-cols-2 md:gap-6">
-            {isOwner && (
-              <ListModal
-                data={{
-                  collection: collection.data,
-                  details,
-                }}
-                isInTheWrongNetwork={isInTheWrongNetwork}
-                maker={accountData?.address}
-                setToast={setToast}
-                signer={signer}
-              />
-            )}
-            <BuyNow
-              data={{
-                collection: collection.data,
-                details,
-              }}
-              signer={signer}
-              isInTheWrongNetwork={isInTheWrongNetwork}
-              setToast={setToast}
-              show={!isOwner}
-            />
-            <AcceptOffer
-              data={{
-                collection: collection.data,
-                details,
-              }}
-              isInTheWrongNetwork={isInTheWrongNetwork}
-              setToast={setToast}
-              show={isOwner}
-              signer={signer}
-            />
-            {!isOwner && (
-              <TokenOfferModal
-                signer={signer}
-                data={{
-                  collection: collection.data,
-                  details,
-                }}
-                royalties={{
-                  bps: collection.data?.collection?.royalties?.bps,
-                  recipient: collection.data?.collection?.royalties?.recipient,
-                }}
-                env={{
-                  chainId: +CHAIN_ID as ChainId,
-                }}
-                setToast={setToast}
-              />
-            )}
-          </div>
         </div>
-        <div
-          className={`${
-            (isOwner && isListed) || isTopBidder ? 'mt-6' : ''
-          } flex justify-center`}
-        >
+        <div className="mt-6 grid grid-cols-1 gap-3 md:grid-cols-2">
+          {isOwner && (
+            <ListModal
+              data={{
+                collection: collection.data,
+                details,
+              }}
+              isInTheWrongNetwork={isInTheWrongNetwork}
+              maker={accountData?.address}
+              setToast={setToast}
+              signer={signer}
+            />
+          )}
+          {!isOwner && (
+            <BuyNow
+              buttonClassName="btn-primary-fill col-span-1"
+              data={{
+                collection: collection.data,
+                details,
+              }}
+              signer={signer}
+              isInTheWrongNetwork={isInTheWrongNetwork}
+            />
+          )}
+          {isInCart && !isOwner && (
+            <button
+              onClick={() => {
+                const newCartTokens = [...cartTokens]
+                const index = newCartTokens.findIndex(
+                  (cartToken) =>
+                    cartToken.contract === contract &&
+                    cartToken.tokenId === tokenId
+                )
+                newCartTokens.splice(index, 1)
+                setCartTokens(newCartTokens)
+              }}
+              className="outline-none"
+            >
+              <div className="btn-primary-outline w-full text-[#FF3B3B] disabled:cursor-not-allowed dark:border-neutral-600  dark:text-red-300 dark:ring-primary-900 dark:focus:ring-4">
+                Remove
+              </div>
+            </button>
+          )}
+          {!isInCart && !isOwner && isListed && (
+            <button
+              disabled={!token?.market?.floorAsk?.price}
+              onClick={() => {
+                if (tokenId && contract) {
+                  setCartTokens([
+                    ...cartTokens,
+                    {
+                      tokenId,
+                      contract,
+                      collection: { name: token.token?.collection?.name },
+                      image: token.token?.image,
+                      floorAskPrice: token.market?.floorAsk?.price,
+                      name: token.token?.name,
+                    },
+                  ])
+                }
+              }}
+              className="outline-none"
+            >
+              <div className="btn-primary-outline w-full px-[10px] dark:border-neutral-600 dark:text-white dark:ring-primary-900  dark:focus:ring-4">
+                Add to Cart
+              </div>
+            </button>
+          )}
+          <AcceptOffer
+            data={{
+              collection: collection.data,
+              details,
+            }}
+            isInTheWrongNetwork={isInTheWrongNetwork}
+            setToast={setToast}
+            show={showAcceptOffer}
+            signer={signer}
+          />
+          {!isOwner && (
+            <TokenOfferModal
+              signer={signer}
+              data={{
+                collection: collection.data,
+                details,
+              }}
+              royalties={{
+                bps: collection.data?.collection?.royalties?.bps,
+                recipient: collection.data?.collection?.royalties?.recipient,
+              }}
+              env={{
+                chainId: +CHAIN_ID as ChainId,
+              }}
+              setToast={setToast}
+            />
+          )}
+
           <CancelOffer
             data={{
               collection: collection.data,
               details,
             }}
-            maker={accountData?.address?.toLowerCase()}
             signer={signer}
             show={isTopBidder}
             isInTheWrongNetwork={isInTheWrongNetwork}
@@ -161,7 +217,6 @@ const PriceData: FC<Props> = ({ details, collection }) => {
               collection: collection.data,
               details,
             }}
-            maker={accountData?.address?.toLowerCase()}
             signer={signer}
             show={isOwner && isListed}
             isInTheWrongNetwork={isInTheWrongNetwork}

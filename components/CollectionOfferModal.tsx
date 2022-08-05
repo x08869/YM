@@ -1,11 +1,10 @@
 import { ComponentProps, FC, useContext, useEffect, useState } from 'react'
 import * as Dialog from '@radix-ui/react-dialog'
 import ExpirationSelector from './ExpirationSelector'
-import { BigNumber, constants, ethers } from 'ethers'
+import { constants, ethers } from 'ethers'
 import {
   useAccount,
   useBalance,
-  useConnect,
   useNetwork,
   useProvider,
   useSigner,
@@ -13,20 +12,25 @@ import {
 import calculateOffer from 'lib/calculateOffer'
 import FormatEth from './FormatEth'
 import expirationPresets from 'lib/offerExpirationPresets'
-import { Weth } from '@reservoir0x/sdk/dist/common/helpers'
 import getWeth from 'lib/getWeth'
 import useCollectionStats from 'hooks/useCollectionStats'
 import useTokens from 'hooks/useTokens'
-import { Execute, placeBid } from '@reservoir0x/client-sdk'
+import {
+  Execute,
+  ReservoirClientActions,
+} from '@reservoir0x/reservoir-kit-client'
 import ModalCard from './modal/ModalCard'
 import Toast from './Toast'
 import { CgSpinner } from 'react-icons/cg'
 import { GlobalContext } from 'context/GlobalState'
+import { useReservoirClient } from '@reservoir0x/reservoir-kit-ui'
 
-const RESERVOIR_API_BASE = process.env.NEXT_PUBLIC_RESERVOIR_API_BASE
 const SOURCE_ID = process.env.NEXT_PUBLIC_SOURCE_ID
 const FEE_BPS = process.env.NEXT_PUBLIC_FEE_BPS
 const FEE_RECIPIENT = process.env.NEXT_PUBLIC_FEE_RECIPIENT
+
+const ARTBLOCKS = '0xa7d8d9ef8d8ce8992df33d8b8cf4aebabd5bd270'
+const ARTBLOCKS2 = '0x059edd72cd353df5106d2b9cc5ab83a52287ac3a'
 
 type Props = {
   env: {
@@ -61,9 +65,8 @@ const CollectionOfferModal: FC<Props> = ({
 }) => {
   const [expiration, setExpiration] = useState<string>('oneDay')
   const [waitingTx, setWaitingTx] = useState<boolean>(false)
-  const { data: connectData, connect, connectors } = useConnect()
   const [steps, setSteps] = useState<Execute['steps']>()
-  const { activeChain } = useNetwork()
+  const { chain: activeChain } = useNetwork()
   const [open, setOpen] = useState(false)
   const { dispatch } = useContext(GlobalContext)
   const [calculations, setCalculations] = useState<
@@ -77,16 +80,14 @@ const CollectionOfferModal: FC<Props> = ({
     warning: null,
   })
   const [offerPrice, setOfferPrice] = useState<string>('')
-  const [weth, setWeth] = useState<{
-    weth: Weth
-    balance: BigNumber
-  } | null>(null)
+  const [weth, setWeth] = useState<Awaited<ReturnType<typeof getWeth>>>(null)
   const { data: signer } = useSigner()
-  const { data: account } = useAccount()
+  const account = useAccount()
   const { data: ethBalance, refetch } = useBalance({
     addressOrName: account?.address,
   })
   const provider = useProvider()
+  const reservoirClient = useReservoirClient()
 
   function getBps(royalties: number | undefined, envBps: string | undefined) {
     let sum = 0
@@ -129,7 +130,7 @@ const CollectionOfferModal: FC<Props> = ({
     }
   }, [offerPrice])
 
-  const handleError: Parameters<typeof placeBid>[0]['handleError'] = (err) => {
+  const handleError = (err: any) => {
     setOpen(false)
     setSteps(undefined)
     // Handle user rejection
@@ -148,7 +149,7 @@ const CollectionOfferModal: FC<Props> = ({
     })
   }
 
-  const handleSuccess: Parameters<typeof placeBid>[0]['handleSuccess'] = () => {
+  const handleSuccess = () => {
     stats.mutate()
     tokens.mutate()
   }
@@ -156,34 +157,45 @@ const CollectionOfferModal: FC<Props> = ({
   const execute = async () => {
     if (!signer) dispatch({ type: 'CONNECT_WALLET', payload: true })
 
+    if (!reservoirClient) {
+      throw 'reservoirClient not initialized'
+    }
+
     setWaitingTx(true)
 
     const expirationValue = expirationPresets
       .find(({ preset }) => preset === expiration)
       ?.value()
 
-    if (!signer) return
-
-    const query: Parameters<typeof placeBid>['0']['query'] = {
-      maker: await signer.getAddress(),
-      weiPrice: calculations.total.toString(),
+    const options: Parameters<
+      ReservoirClientActions['placeBid']
+    >['0']['options'] = {
       expirationTime: expirationValue,
-      collection: data.collection.id,
-      orderKind: 'zeroex-v4',
     }
 
-    if (SOURCE_ID) query.source = SOURCE_ID
-    if (FEE_BPS) query.fee = FEE_BPS
-    if (FEE_RECIPIENT) query.feeRecipient = FEE_RECIPIENT
+    if (
+      !data.collection.id?.toLowerCase().includes(ARTBLOCKS.toLowerCase()) &&
+      !data.collection.id?.toLowerCase().includes(ARTBLOCKS2.toLowerCase())
+    ) {
+      options.orderKind = 'seaport'
+    } else {
+      options.orderKind = 'zeroex-v4'
+    }
 
-    await placeBid({
-      query,
-      signer,
-      apiBase: RESERVOIR_API_BASE,
-      setState: setSteps,
-      handleSuccess,
-      handleError,
-    })
+    if (SOURCE_ID) options.source = SOURCE_ID
+    if (FEE_BPS) options.fee = FEE_BPS
+    if (FEE_RECIPIENT) options.feeRecipient = FEE_RECIPIENT
+
+    await reservoirClient.actions
+      .placeBid({
+        weiPrice: calculations.total.toString(),
+        collection: data.collection.id,
+        signer,
+        options,
+        onProgress: setSteps,
+      })
+      .then(handleSuccess)
+      .catch(handleError)
     setWaitingTx(false)
   }
 
